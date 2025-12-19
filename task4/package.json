@@ -1,0 +1,28 @@
+{
+  "name": "rag-with-express",
+  "version": "1.0.0",
+  "description": "this is how the rag works. you upload Documents → Chunking → HF Embeddings → ChromaDB Vector Store → Similarity Search → Gemini Flash 2.5 → Answer",
+  "license": "ISC",
+  "author": "herdam",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node main.js"
+  },
+  "dependencies": {
+    "@chroma-core/default-embed": "^0.1.9",
+    "@google/genai": "^1.32.0",
+    "@huggingface/transformers": "^3.8.1",
+    "chromadb": "^3.1.6",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "mammoth": "^1.11.0",
+    "multer": "^2.0.2",
+    "node-tesseract-ocr": "^2.2.1",
+    "pdf-parse": "^2.4.5",
+    "pdf2json": "^4.0.0",
+    "pdfjs-dist": "^5.4.449"
+  }
+}
