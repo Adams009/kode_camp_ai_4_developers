@@ -513,7 +513,7 @@ app.post("/rechunk", async (req, res) => {
     // await collection.delete({ where: {} });
 
     const docs = await loadAllDocumentsWithCategory(
-      process.env.DOCS_DIR
+      process.env.RAG_DATA_DIR
     );
 
     if (specificCategory) docs = docs.filter(d => d.category === specificCategory);
