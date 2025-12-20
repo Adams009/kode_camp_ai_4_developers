@@ -399,7 +399,7 @@ return res.json({ message: "File uploaded and processed." });
 // /prompt — RAG answer generation
 // ---------------------------------------------
 // 
-app.post("/prompt", async (req, res) => {
+app.post("/chat", async (req, res) => {
   try {
     const { question } = req.body;
 
@@ -501,9 +501,6 @@ ${contextText}`
 });
 
 
-
-
-
 // Rechunk endpoint
 app.post("/rechunk", async (req, res) => {
   try {
@@ -535,6 +532,49 @@ app.post("/rechunk", async (req, res) => {
   } catch (err) {
     console.error("Rechunk failed:", err);
     return res.status(500).json({ error: "Rechunk failed", details: err.message });
+  }
+});
+
+// health endpoint
+// health endpoint
+app.get("/health", async (req, res) => {
+  try {
+    const startTime = Date.now();
+    
+    // Check Chroma connectivity
+    const collectionCount = await collection.count();
+    
+    const healthStatus = {
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      services: {
+        express: "running",
+        chroma: "connected",
+        embedder: "ready",
+        gemini: "configured"
+      },
+      database: {
+        connected: true,
+        documentsCount: collectionCount
+      },
+      responseTime: `${Date.now() - startTime}ms`
+    };
+    
+    res.status(200).json(healthStatus);
+  } catch (error) {
+    console.error("Health check failed:", error);
+    res.status(503).json({
+      status: "unhealthy",
+      timestamp: new Date().toISOString(),
+      error: error.message,
+      services: {
+        express: "running",
+        chroma: "disconnected",
+        embedder: "unknown",
+        gemini: "unknown"
+      }
+    });
   }
 });
 
