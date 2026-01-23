@@ -90,122 +90,45 @@ const tools = [
 // Send message that triggers tool calls
 // --------------------------------------------
 
+async function callModel(contents) {
+  return ai.models.generateContent({
+    model: process.env.LLM_MODEL_NAME,
+    contents,
+    config: {
+      tools,
+      toolConfig: {
+        functionCallingConfig: { mode: "AUTO" },
+      },
+    },
+  });
+}
+
 const prompts =
   "I'm taking a flight from Lagos to Nairobi for a conference. I would like to know the total flight time back and forth, and the total cost of logistics for this conference if I'm staying for three days.";
 
-const response = await ai.models.generateContent({
-  model: process.env.LLM_MODEL_NAME,
-  contents: [
-    {
-      role: "user",
-      parts: [{ text: prompts }],
-    },
-  ],
-  config: {
-    tools: tools,
-    toolConfig: {
-      functionCallingConfig: {
-        mode: "AUTO",
-      },
-    },
-  },
-});
+const userMessage = {
+  role: "user",
+  parts: [{ text: prompts }],
+};
 
-const parts = response.candidates[0].content.parts;
-console.log("AI Response:", JSON.stringify(parts, null, 2));
+try {
+  let response = await callModel([userMessage]);
 
-// -----------------------------------
-// function call check
-// ----------------------------------
-let functionCall;
-for (const part of parts) {
-  if (part.functionCall) {
-    functionCall = part.functionCall;
-    break;
+  const parts = response.candidates[0].content.parts;
+  console.log("AI Response:", JSON.stringify(parts, null, 2));
+
+  // -----------------------------------
+  // function call check
+  // ----------------------------------
+  function extractFunctionCall(parts) {
+    return parts.find((p) => p.functionCall)?.functionCall;
   }
-}
 
-if (!functionCall) {
-  console.log("No function call, final text:", parts[0].text);
-  process.exit(0);
-}
-
-console.log("Tool requested:", functionCall.name);
-console.log("Arguments:", functionCall.args);
-
-// -----------------------------------
-// function names to implementations
-// ----------------------------------
-let toolResult;
-
-if (functionCall.name === "get_flight_schedule") {
-  toolResult = getFlightSchedule(functionCall.args);
-}
-
-if (functionCall.name === "get_hotel_schedule") {
-  toolResult = getHotelSchedule(functionCall.args);
-}
-
-if (functionCall.name === "convert_currency") {
-  toolResult = convertCurrency(functionCall.args);
-}
-
-console.log("Tool result:", toolResult);
-
-// -----------------------------------
-// Send tool result back to AI
-// -----------------------------------
-
-const conversation = [
-  {
-    role: "user",
-    parts: [{ text: prompts }],
-  },
-  {
-    role: "model",
-    parts: [
-      {
-        functionResponse: {
-          name: functionCall.name,
-          response: toolResult,
-        },
-      },
-    ],
-  },
-];
-
-let followUpResponse = await ai.models.generateContent({
-  model: process.env.LLM_MODEL_NAME,
-  contents: conversation,
-  config: {
-    tools: tools,
-    toolConfig: {
-      functionCallingConfig: {
-        mode: "AUTO",
-      },
-    },
-  },
-});
-
-let followUpParts = followUpResponse.candidates[0].content.parts;
-
-// ---------------------------------------------
-// check for further function call or final answer
-// ---------------------------------------------
-let check = true;
-do {
-  functionCall = undefined;
-  for (const part of followUpParts) {
-    if (part.functionCall) {
-      functionCall = part.functionCall;
-      break;
-    }
-  }
+  let functionCall = extractFunctionCall(parts);
 
   if (!functionCall) {
-    console.log("final text:", followUpParts[0].text);
-    check = false;
-    break;
+    console.log("No function call, final text:", parts[0].text);
+    process.exit(0);
   }
 
   console.log("Tool requested:", functionCall.name);
@@ -214,53 +137,93 @@ do {
   // -----------------------------------
   // function names to implementations
   // ----------------------------------
-  let toolResult;
+  const toolHandlers = {
+    get_flight_schedule: getFlightSchedule,
+    get_hotel_schedule: getHotelSchedule,
+    convert_currency: convertCurrency,
+  };
 
-  if (functionCall.name === "get_flight_schedule") {
-    toolResult = getFlightSchedule(functionCall.args);
+  function executeTool(functionCall) {
+    const handler = toolHandlers[functionCall.name];
+
+    if (!handler) {
+      throw new Error(`No handler for tool: ${functionCall.name}`);
+    }
+
+    if (!functionCall.args) {
+      throw new Error(`No arguments provided for tool: ${functionCall.name}`);
+    }
+
+    if (typeof handler !== "function") {
+      throw new Error(
+        `Handler for tool ${functionCall.name} is not a function`,
+      );
+    }
+
+    if (typeof functionCall.args !== "object") {
+      throw new Error(
+        `Arguments for tool ${functionCall.name} must be an object`,
+      );
+    }
+
+    return handler(functionCall.args);
   }
 
-  if (functionCall.name === "get_hotel_schedule") {
-    toolResult = getHotelSchedule(functionCall.args);
-  }
-
-  if (functionCall.name === "convert_currency") {
-    toolResult = convertCurrency(functionCall.args);
-  }
+  let toolResult = executeTool(functionCall);
 
   console.log("Tool result:", toolResult);
 
   // -----------------------------------
   // Send tool result back to AI
   // -----------------------------------
+  function toolResponseMessage(name, response) {
+    return {
+      role: "model",
+      parts: [{ functionResponse: { name, response } }],
+    };
+  }
 
-  conversation.push({
-    role: "model",
-    parts: [
-      {
-        functionResponse: {
-          name: functionCall.name,
-          response: toolResult,
-        },
-      },
-    ],
-  });
+  const responseMessage = toolResponseMessage(functionCall.name, toolResult);
 
-  followUpResponse = await ai.models.generateContent({
-    model: process.env.LLM_MODEL_NAME,
-    contents: conversation,
-    config: {
-      tools: tools,
-      toolConfig: {
-        functionCallingConfig: {
-          mode: "AUTO",
-        },
-      },
-    },
-  });
+  let initialConversation = [userMessage, responseMessage];
 
-  followUpParts = followUpResponse.candidates[0].content.parts;
-} while (check);
+  let followUpResponse = await callModel(initialConversation);
+
+  let followUpParts = followUpResponse.candidates[0].content.parts;
+
+  // ---------------------------------------------
+  // check for further function call or final answer
+  // ---------------------------------------------
+  while (true) {
+    functionCall = undefined
+    functionCall = extractFunctionCall(followUpParts);
+
+    if (!functionCall) {
+      console.log("No function call, final text:", followUpParts[0].text);
+      break;
+    }
+
+    console.log("Tool requested:", functionCall.name);
+    console.log("Arguments:", functionCall.args);
+
+    // -----------------------------------
+    // function names to implementations
+    // ----------------------------------
+    let toolResult = executeTool(functionCall);
+    console.log("Tool result:", toolResult);
+    // -----------------------------------
+    // Send tool result back to AI
+    // -----------------------------------
+    initialConversation.push(
+      toolResponseMessage(functionCall.name, toolResult),
+    );
+
+    followUpResponse = await callModel(initialConversation);
+    followUpParts = followUpResponse.candidates[0].content.parts;
+  }
+} catch (error) {
+  console.error("Error during AI interaction:", error);
+}
 app.listen(3000, () => {
   console.log("Server is running on port 3000");
 });
