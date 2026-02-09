@@ -221,6 +221,3 @@ try {
 } catch (error) {
   console.error("Error during AI interaction:", error);
 }
-app.listen(3000, () => {
-  console.log("Server is running on port 3000");
-});
